@@ -299,7 +299,8 @@ function authMsg(e){const m={'auth/invalid-credential':'Incorrect email or passw
 
 async function api(path,opts){if(!API_URL)throw new Error('Railway API URL is not configured. Add it in the HOPPING configuration.');opts=opts||{};const headers={'Content-Type':'application/json'};const u=fbAuth&&fbAuth.currentUser;if(u)headers.Authorization='Bearer '+await u.getIdToken();let res;const ctl=new AbortController();const tm=setTimeout(()=>ctl.abort(),20000);try{res=await fetch(API_URL+path,{method:opts.method||'GET',headers,signal:ctl.signal,body:opts.body?JSON.stringify(opts.body):undefined})}catch(e){clearTimeout(tm);throw new Error('Cannot reach the HOPPING server. Please try again shortly.')}clearTimeout(tm);const data=await res.json().catch(()=>({}));if(!res.ok)throw new Error(data.error||'Request failed ('+res.status+')');return data}
 
-async function loadFacilities(){if(!API_URL)return;try{const list=await api('/api/facilities');if(Array.isArray(list)&&list.length){facilities=list.map(normFac);if(role==='staff'&&claims.facilityId){const i=facilities.findIndex(f=>f.id===claims.facilityId);if(i>0)facilities.unshift(facilities.splice(i,1)[0])}if(!AUTH_PAGES.includes(page))render()}}catch(e){console.warn('Showing sample facilities:',e.message)}}
+async function seedFacilities(){const rows=facilities.map(f=>({id:f.id,name:f.name,type:f.type,loc:f.loc,distance:f.distance,status:f.status,services:f.services,referral:f.referral,hours:f.hours,phone:f.phone,remark:f.remark}));return api('/api/admin/facilities/seed',{method:'POST',body:{facilities:rows}})}
+async function loadFacilities(){if(!API_URL)return;try{let list=await api('/api/facilities');if(Array.isArray(list)&&!list.length&&role==='admin'){try{await seedFacilities();list=await api('/api/facilities')}catch(e){console.warn('Seeding facilities:',e.message)}}if(Array.isArray(list)&&list.length){facilities=list.map(normFac);if(role==='staff'&&claims.facilityId){const i=facilities.findIndex(f=>f.id===claims.facilityId);if(i>0)facilities.unshift(facilities.splice(i,1)[0])}if(!AUTH_PAGES.includes(page))render()}}catch(e){console.warn('Showing sample facilities:',e.message)}}
 
 async function loadWorkspaceData(){
  if(!apiReady||!fbAuth.currentUser)return;
@@ -372,7 +373,7 @@ async function publishStatus(){const v=(document.querySelector('input[name="faci
 async function submitStaff(){const g=n=>((document.querySelector('#modal-root [name="'+n+'"]')||{}).value||'').trim();
  const body={firstName:g('sfirst'),lastName:g('slast'),email:g('semail'),password:g('spass'),facilityId:g('sfacility')};
  if(!body.email||body.password.length<8){toast('Enter an email and a temporary password of at least 8 characters.');return}
- try{await api('/api/admin/staff',{method:'POST',body});$('#modal-root').innerHTML='';modalAction=null;toast('Staff account created. Ask them to change the temporary password after their first sign in.')}catch(e){toast(e.message)}}
+ try{try{await api('/api/admin/staff',{method:'POST',body})}catch(e){if(e.message!=='Choose a valid facility.')throw e;await seedFacilities();await api('/api/admin/staff',{method:'POST',body})}$('#modal-root').innerHTML='';modalAction=null;toast('Staff account created. Ask them to change the temporary password after their first sign in.')}catch(e){toast(e.message)}}
 
 async function saveChecklist(){
  const items=Array.from(document.querySelectorAll('.content .checklist')).map((el,i)=>el.checked?(el.parentElement?.textContent||'Checklist item '+(i+1)).trim():null).filter(Boolean);
